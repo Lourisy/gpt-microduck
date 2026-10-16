@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Microduck VLM Control</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f1f5f9;
+      --muted: #8ea0b8;
+      --canvas: #09111d;
+      --panel: #101c2b;
+      --panel-2: #142437;
+      --line: rgba(155, 177, 201, .18);
+      --signal: #70e1c5;
+      --signal-dim: rgba(112, 225, 197, .14);
+      --danger: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 15% -10%, rgba(55, 116, 160, .2), transparent 36rem),
+        linear-gradient(135deg, #09111d 0%, #0d1928 58%, #111c2b 100%);
+      font: 15px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .shell { width: min(1440px, calc(100% - 48px)); margin: 0 auto; padding: 32px 0 44px; }
+    header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding-bottom: 25px; border-bottom: 1px solid var(--line); }
+    .kicker { color: var(--signal); font: 700 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; }
+    h1 { margin: 7px 0 0; font-size: clamp(28px, 4vw, 44px); letter-spacing: -.045em; line-height: 1; }
+    .intro { max-width: 540px; margin: 11px 0 0; color: var(--muted); }
+    .connection { display: flex; align-items: center; gap: 9px; color: var(--muted); white-space: nowrap; }
+    .connection::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 14px var(--signal); }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 20px; margin-top: 22px; }
+    .views { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+    .view { overflow: hidden; border: 1px solid var(--line); background: #050b13; box-shadow: 0 14px 34px rgba(0, 0, 0, .18); }
+    .view.primary { border-radius: 14px 4px 4px 4px; }
+    .view.secondary { border-radius: 4px 14px 4px 4px; }
+    .view-label { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 10px 13px; color: var(--muted); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .01em; }
+    .view-label strong { color: var(--ink); font: 650 14px Inter, ui-sans-serif, sans-serif; }
+    .view-label span { color: #6f8d9b; }
+    .view img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #04080d; }
+    #third-frame { cursor: grab; touch-action: none; }
+    #third-frame.dragging { cursor: grabbing; }
+    .primary img, .secondary img { aspect-ratio: 16 / 9; }
+    .control { align-self: start; border-left: 1px solid var(--line); padding-left: 20px; }
+    label { display: block; margin-bottom: 9px; color: var(--muted); font-weight: 650; }
+    textarea { display: block; width: 100%; min-height: 126px; resize: vertical; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; outline: none; color: var(--ink); background: rgba(4, 10, 18, .7); font: inherit; }
+    textarea:focus { border-color: var(--signal); box-shadow: 0 0 0 3px var(--signal-dim); }
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 11px; }
+    button { min-height: 43px; border: 1px solid transparent; border-radius: 8px; color: #071b19; background: var(--signal); font: 700 14px inherit; cursor: pointer; }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: .62; cursor: wait; }
+    button:focus-visible { outline: 3px solid rgba(112, 225, 197, .38); outline-offset: 2px; }
+    button.stop { color: #ffdbe1; border-color: rgba(251, 113, 133, .4); background: rgba(127, 29, 49, .45); }
+    button.camera-reset { min-height: 0; padding: 3px 7px; border-color: var(--line); border-radius: 4px; color: var(--muted); background: transparent; font: 11px inherit; }
+    button.camera-reset:hover { color: var(--ink); background: var(--panel-2); }
+    .note { margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+    .monitor { margin-top: 18px; padding: 16px 18px 18px; border: 1px solid var(--line); border-radius: 12px; background: rgba(16, 28, 43, .62); }
+    .monitor-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 13px; }
+    .monitor-head h2 { margin: 0; font-size: 15px; }
+    #badge { padding: 4px 8px; border-radius: 4px; color: #06231d; background: var(--signal); font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #badge.warn { color: #2c1c04; background: #fbbf24; }
+    #badge.error { color: #fff; background: var(--danger); }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 13px; }
+    .metric { min-width: 0; padding: 9px 10px; border-left: 2px solid var(--signal); background: var(--signal-dim); }
+    .metric small { display: block; color: var(--muted); font-size: 11px; }
+    .metric strong { display: block; overflow: hidden; margin-top: 3px; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+    .activity { margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .activity-main { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .activity-main strong { font-size: 17px; }
+    .activity-main span { color: var(--signal); font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .activity p { margin: 5px 0 0; color: var(--muted); }
+    .timeline-title { margin-bottom: 9px; color: var(--muted); font-size: 12px; }
+    .timeline { display: grid; gap: 8px; max-height: 255px; overflow: auto; padding-right: 3px; }
+    .event { padding: 10px 11px; border-left: 2px solid var(--signal); background: rgba(112, 225, 197, .07); }
+    .event.timeout { border-left-color: #fbbf24; background: rgba(251, 191, 36, .07); }
+    .event.error { border-left-color: var(--danger); background: rgba(251, 113, 133, .08); }
+    .event-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .event-head strong { font-size: 13px; }
+    .event-head span { color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .event-text { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+    .chip { padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; color: #c9d7e8; background: rgba(4, 10, 18, .48); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    footer { margin-top: 22px; color: var(--muted); font-size: 12px; }
+    @media (max-width: 960px) {
+      .shell { width: min(100% - 30px, 760px); }
+      .workspace { grid-template-columns: 1fr; }
+      .control { border: 0; padding: 18px 0 0; }
+    }
+    @media (max-width: 620px) {
+      .shell { width: min(100% - 22px, 520px); padding-top: 21px; }
+      header { display: block; }
+      .connection { margin-top: 18px; }
+      .views { grid-template-columns: 1fr; }
+      .secondary img { aspect-ratio: 16 / 9; }
+      .metrics { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="kicker">Microduck / VLM simulation</div>
+        <h1>Control room</h1>
+        <p class="intro">用自然语言调用官方技能，同时观察机器人视角与仿真环境。</p>
+      </div>
+      <div class="connection">仿真循环在线</div>
+    </header>
+
+    <section class="workspace">
+      <div>
+        <div class="views">
+          <article class="view primary">
+            <div class="view-label"><strong>仿真环境 · 第三视角</strong><span>640 × 360</span><button class="camera-reset" onclick="resetCamera()">重置视角</button></div>
+            <img id="third-frame" src="/api/third_stream" alt="MuJoCo third-person view">
+          </article>
+          <article class="view secondary">
+            <div class="view-label"><strong>机器人视角 · head camera</strong><span>640 × 360 · VLM input</span></div>
+            <img id="frame" src="/api/frame_stream" alt="Microduck head camera">
+          </article>
+        </div>
+        <section class="monitor">
+          <div class="monitor-head"><h2>运行监视</h2><span id="badge">连接中</span></div>
+          <div class="activity">
+            <div class="activity-main"><strong id="activity-skill">空闲</strong><span id="activity-status">idle</span></div>
+            <p id="activity-message">等待文本任务。</p>
+            <div id="activity-arguments" class="chips"></div>
+          </div>
+          <div class="metrics">
+            <div class="metric"><small>当前技能</small><strong id="skill">—</strong></div>
+            <div class="metric"><small>控制策略</small><strong id="policy">—</strong></div>
+            <div class="metric"><small>姿态分数</small><strong id="upright">—</strong></div>
+          </div>
+          <div class="timeline-title">最近执行</div>
+          <div id="timeline" class="timeline"><div class="event-text">还没有技能记录。</div></div>
+        </section>
+      </div>
+
+      <aside class="control">
+        <label for="task">下达文本任务</label>
+        <textarea id="task" placeholder="例如：向前走一小段，然后坐下"></textarea>
+        <div class="buttons">
+          <button id="send-button" onclick="sendTask()">发送任务</button>
+          <button id="stop-button" class="stop" onclick="stopTask()">停止</button>
+        </div>
+        <p class="note">每次 GPT 只选择一个技能。技能完成或超时后，系统才会请求下一次决策。</p>
+      </aside>
+    </section>
+    <footer>本地 MuJoCo 仿真 · GPT 只参与高层技能选择</footer>
+  </main>
+
+  <script>
+    const badge = document.querySelector('#badge');
+    const skill = document.querySelector('#skill');
+    const policy = document.querySelector('#policy');
+    const upright = document.querySelector('#upright');
+    const activitySkill = document.querySelector('#activity-skill');
+    const activityStatus = document.querySelector('#activity-status');
+    const activityMessage = document.querySelector('#activity-message');
+    const activityArguments = document.querySelector('#activity-arguments');
+    const timeline = document.querySelector('#timeline');
+    const task = document.querySelector('#task');
+    const thirdFrame = document.querySelector('#third-frame');
+    let dragStart = null;
+    let cameraDelta = [0, 0, 0];
+    let cameraTimer = null;
+
+    function moveCamera(azimuth, elevation, zoom = 0) {
+      cameraDelta[0] += azimuth;
+      cameraDelta[1] += elevation;
+      cameraDelta[2] += zoom;
+      if (cameraTimer) return;
+      cameraTimer = setTimeout(() => {
+        const [a, e, z] = cameraDelta;
+        cameraDelta = [0, 0, 0];
+        cameraTimer = null;
+        fetch('/api/camera', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({azimuth: a, elevation: e, zoom: z})
+        });
+      }, 30);
+    }
+    function resetCamera() {
+      fetch('/api/camera/reset', {method: 'POST'});
+    }
+    thirdFrame.addEventListener('pointerdown', (event) => {
+      dragStart = [event.clientX, event.clientY];
+      thirdFrame.classList.add('dragging');
+      thirdFrame.setPointerCapture(event.pointerId);
+    });
+    thirdFrame.addEventListener('pointermove', (event) => {
+      if (!dragStart) return;
+      const dx = event.clientX - dragStart[0];
+      const dy = event.clientY - dragStart[1];
+      dragStart = [event.clientX, event.clientY];
+      moveCamera(dx * 0.9, dy * 0.6);
+    });
+    thirdFrame.addEventListener('pointerup', () => {
+      dragStart = null;
+      thirdFrame.classList.remove('dragging');
+    });
+    thirdFrame.addEventListener('pointercancel', () => {
+      dragStart = null;
+      thirdFrame.classList.remove('dragging');
+    });
+    thirdFrame.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      moveCamera(0, 0, event.deltaY * 0.0015);
+    }, {passive: false});
+
+    async function sendTask() {
+      const text = task.value.trim();
+      if (!text) return;
+      const button = document.querySelector('#send-button');
+      button.disabled = true; button.textContent = '提交中…';
+      try {
+        const response = await fetch('/api/task', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({text})
+        });
+        const result = await response.json();
+        if (!result.accepted) activityMessage.textContent = result.message || '任务未提交';
+      } finally { button.disabled = false; button.textContent = '发送任务'; }
+    }
+    async function stopTask() {
+      const button = document.querySelector('#stop-button');
+      button.disabled = true; button.textContent = '停止中…';
+      try { await fetch('/api/stop', {method: 'POST'}); }
+      finally { button.disabled = false; button.textContent = '停止'; }
+    }
+    task.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) sendTask();
+    });
+
+    const skillNames = {
+      walking: '行走', stand: '站立', sitstand: '坐 / 站',
+      ground_pick: '捡拾', kick_left: '左脚踢球', kick_right: '右脚踢球',
+      roulade: '前滚翻', done: '任务完成'
+    };
+    const policyNames = {walking: '行走策略', standing: '站立策略', sit: '坐站策略'};
+    const statusNames = {
+      idle: '空闲', running: '执行中', waiting_for_vlm: '等待 GPT',
+      completed: '已完成', timeout: '已超时',
+      done: '已完成', error: '错误', stopped: '已停止',
+      requesting_vlm: '请求 GPT'
+    };
+    function safe(value) {
+      return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[char]));
+    }
+    function skillLabel(name) { return skillNames[name] || name || '空闲'; }
+    function argsHtml(args) {
+      if (!args || !Object.keys(args).length) return '';
+      return '<div class="chips">' + Object.entries(args).map(([key, value]) => {
+        const shown = typeof value === 'number' ? Number(value).toFixed(2) : value;
+        return `<span class="chip">${safe(key)}: ${safe(shown)}</span>`;
+      }).join('') + '</div>';
+    }
+    function renderTimeline(history) {
+      const entries = (history || []).slice().reverse();
+      if (!entries.length) {
+        timeline.innerHTML = '<div class="event-text">还没有技能记录。</div>';
+        return;
+      }
+      timeline.innerHTML = entries.map((entry) => {
+        const action = entry.last_skill || {};
+        const result = entry.last_result || {};
+        const kind = result.result || entry.event || 'completed';
+        return `<article class="event ${safe(kind)}">
+          <div class="event-head"><strong>${safe(skillLabel(action.skill))}</strong><span>${safe(statusNames[kind] || kind)}</span></div>
+          <div class="event-text">${safe(action.text || result.message || '技能执行完成。')}</div>
+          ${argsHtml(action.arguments)}
+        </article>`;
+      }).join('');
+    }
+    async function refresh() {
+      try {
+        const data = await (await fetch('/api/state?x=' + Date.now())).json();
+        const current = data.current || {};
+        const status = current.status || 'idle';
+        const currentName = current.skill || ((status === 'waiting_for_vlm' || status === 'requesting_vlm') ? '等待 GPT' : '空闲');
+        badge.textContent = statusNames[status] || status;
+        badge.className = status === 'error' ? 'error' : (status === 'running' ? '' : 'warn');
+        activitySkill.textContent = currentName === '等待 GPT' ? currentName : skillLabel(current.skill);
+        activityStatus.textContent = statusNames[status] || status;
+        activityMessage.textContent = current.message || current.text || (status === 'idle' ? '等待文本任务。' : '');
+        activityArguments.innerHTML = argsHtml(current.arguments);
+        skill.textContent = current.skill ? skillLabel(current.skill) : (statusNames[status] || '空闲');
+        policy.textContent = policyNames[data.policy] || data.policy || '—';
+        upright.textContent = data.upright_score == null ? '—' : data.upright_score;
+        renderTimeline(data.history);
+      } catch (error) {
+        badge.textContent = '断开';
+        badge.className = 'error';
+        activitySkill.textContent = '连接错误';
+        activityMessage.textContent = String(error);
+      }
+    }
+    setInterval(refresh, 400);
+    refresh();
+  </script>
+</body>
+</html>
